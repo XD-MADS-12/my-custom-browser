@@ -1,0 +1,22 @@
+{
+  "manifest_version": 2,
+  "name": "YouTube Link Extractor",
+  "version": "1.0",
+  "description": "Automatically extracts YouTube video links from any webpage",
+  "id": "youtube-extractor",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "browser_action": {
+    "default_title": "YouTube Extractor",
+    "default_icon": "icon.png"
+  }
+}
