@@ -12,24 +12,17 @@ android {
         targetSdk 34
         versionCode 1
         versionName "1.0"
-        
-        // Enable multidex for extensions
         multiDexEnabled true
         
-        // Custom config
         buildConfigField "boolean", "ENABLE_EXTENSIONS", "true"
         buildConfigField "boolean", "ENABLE_DEVTOOLS", "true"
-        buildConfigField "String", "VERSION_NAME", "\"1.0-extensions\""
+        buildConfigField "String", "VERSION_NAME", "\"1.0-pro\""
     }
 
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            buildConfigField "boolean", "DEBUG", "false"
-        }
-        debug {
-            buildConfigField "boolean", "DEBUG", "true"
         }
     }
     
@@ -41,12 +34,6 @@ android {
     buildFeatures {
         buildConfig true
     }
-    
-    packagingOptions {
-        resources {
-            excludes += '/META-INF/{AL2.0,LGPL2.1}'
-        }
-    }
 }
 
 dependencies {
@@ -55,5 +42,4 @@ dependencies {
     implementation 'androidx.webkit:webkit:1.9.0'
     implementation 'androidx.multidex:multidex:2.0.1'
     implementation 'com.google.code.gson:gson:2.10.1'
-    implementation 'org.chromium.crux:crux:1.0.0' // For extension support
 }
