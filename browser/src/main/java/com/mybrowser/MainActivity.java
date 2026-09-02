@@ -4,14 +4,20 @@ import android.app.Activity;
 import android.os.Bundle;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowManager;
 import android.webkit.WebChromeClient;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.Toast;
+
+import java.util.List;
 
 public class MainActivity extends Activity {
     private BrowserWebView webView;
+    private ProgressBar progressBar;
     private View customView;
     private WebChromeClient.CustomViewCallback customViewCallback;
     private ExtensionManager extensionManager;
@@ -21,68 +27,155 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         
+        // Fullscreen
+        requestWindowFeature(Window.FEATURE_NO_TITLE);
+        getWindow().setFlags(
+            WindowManager.LayoutParams.FLAG_FULLSCREEN,
+            WindowManager.LayoutParams.FLAG_FULLSCREEN
+        );
+
         // Initialize components
         extensionManager = new ExtensionManager(this);
         youtubeExtractor = new YouTubeExtractor();
-        
-        // Create browser WebView
+
+        // Create main layout
+        LinearLayout mainLayout = new LinearLayout(this);
+        mainLayout.setOrientation(LinearLayout.VERTICAL);
+        mainLayout.setLayoutParams(new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        ));
+
+        // Progress bar
+        progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        progressBar.setLayoutParams(new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            8
+        ));
+        progressBar.setMax(100);
+        progressBar.setVisibility(View.GONE);
+        mainLayout.addView(progressBar);
+
+        // WebView container
+        FrameLayout webViewContainer = new FrameLayout(this);
+        webViewContainer.setLayoutParams(new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            0,
+            1.0f
+        ));
+
+        // Create BrowserWebView
         webView = new BrowserWebView(this);
+        webView.setLayoutParams(new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        ));
+
+        webViewContainer.addView(webView);
+        mainLayout.addView(webViewContainer);
+        setContentView(mainLayout);
+
+        // Setup WebView listeners
         setupWebView();
-        
-        setContentView(webView);
-        
+
         // Load extensions
         if (BuildConfig.ENABLE_EXTENSIONS) {
             extensionManager.loadBundledExtensions();
         }
-        
+
         // Load home page
         webView.loadUrl("https://www.google.com");
     }
-    
+
     private void setupWebView() {
-        WebSettings settings = webView.getSettings();
-        
-        // Basic settings
-        settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true);
-        settings.setDatabaseEnabled(true);
-        settings.setAllowFileAccess(true);
-        settings.setAllowContentAccess(true);
-        settings.setMediaPlaybackRequiresUserGesture(false);
-        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-        
-        // Advanced settings
-        settings.setLoadWithOverviewMode(true);
-        settings.setUseWideViewPort(true);
-        settings.setBuiltInZoomControls(true);
-        settings.setDisplayZoomControls(false);
-        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
-        settings.setJavaScriptCanOpenWindowsAutomatically(true);
-        
-        // Enable DevTools
-        if (BuildConfig.ENABLE_DEVTOOLS) {
-            WebView.setWebContentsDebuggingEnabled(true);
-        }
-        
-        // Custom User Agent with extension support indicator
-        String ua = settings.getUserAgentString();
-        settings.setUserAgentString(ua + " MyBrowser/1.0 Extensions/Enabled");
-        
-        // WebViewClient
-        webView.setWebViewClient(new BrowserWebViewClient(this));
-        
-        // WebChromeClient with DevTools and extension support
-        webView.setWebChromeClient(new BrowserChromeClient(this));
-        
-        // Add JavaScript interface for extensions
-        webView.addJavascriptInterface(new BrowserInterface(), "Browser");
+        // Page load listener
+        webView.setOnPageLoadListener(new BrowserWebView.OnPageLoadListener() {
+            @Override
+            public void onPageStarted(String url) {
+                progressBar.setVisibility(View.VISIBLE);
+                progressBar.setProgress(0);
+                setTitle("Loading...");
+            }
+
+            @Override
+            public void onPageFinished(String url) {
+                progressBar.setVisibility(View.GONE);
+                setTitle(webView.getCurrentTitle());
+                
+                // Inject extension scripts
+                if (BuildConfig.ENABLE_EXTENSIONS) {
+                    extensionManager.injectScripts(webView, url);
+                }
+            }
+
+            @Override
+            public void onProgressChanged(int progress) {
+                progressBar.setProgress(progress);
+                if (progress == 100) {
+                    progressBar.setVisibility(View.GONE);
+                }
+            }
+
+            @Override
+            public void onReceivedTitle(String title) {
+                setTitle(title);
+            }
+
+            @Override
+            public void onReceivedError(String error) {
+                Toast.makeText(MainActivity.this, "Error: " + error, Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        // YouTube links listener
+        webView.setOnYouTubeLinksFoundListener(new BrowserWebView.OnYouTubeLinksFoundListener() {
+            @Override
+            public void onLinksFound(List<String> links) {
+                if (!links.isEmpty()) {
+                    runOnUiThread(() -> {
+                        Toast.makeText(MainActivity.this, 
+                            " " + links.size() + " YouTube links found!", 
+                            Toast.LENGTH_LONG).show();
+                        
+                        // Show links
+                        StringBuilder sb = new StringBuilder("YouTube Links Found:\n\n");
+                        for (int i = 0; i < links.size(); i++) {
+                            sb.append((i + 1) + ". " + links.get(i) + "\n");
+                        }
+                        
+                        // You can show this in a dialog or save to file
+                        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(MainActivity.this);
+                        builder.setTitle("YouTube Links (" + links.size() + ")");
+                        builder.setMessage(sb.toString());
+                        builder.setPositiveButton("Copy All", (dialog, which) -> {
+                            android.content.ClipboardManager clipboard = 
+                                (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                            android.content.ClipData clip = 
+                                android.content.ClipData.newPlainText("YouTube Links", sb.toString());
+                            clipboard.setPrimaryClip(clip);
+                            Toast.makeText(MainActivity.this, "Copied!", Toast.LENGTH_SHORT).show();
+                        });
+                        builder.setNegativeButton("Close", null);
+                        builder.show();
+                    });
+                }
+            }
+        });
     }
-    
-    // Back button handling
+
+    // Back button
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         if (keyCode == KeyEvent.KEYCODE_BACK) {
+            if (customView != null) {
+                webView.setWebChromeClient(new WebChromeClient());
+                customView.setVisibility(View.GONE);
+                ((ViewGroup) getWindow().getDecorView()).removeView(customView);
+                customView = null;
+                customViewCallback.onCustomViewHidden();
+                return true;
+            }
+            
             if (webView.canGoBack()) {
                 webView.goBack();
                 return true;
@@ -90,137 +183,12 @@ public class MainActivity extends Activity {
         }
         return super.onKeyDown(keyCode, event);
     }
-    
+
     @Override
     protected void onDestroy() {
         if (webView != null) {
             webView.destroy();
         }
         super.onDestroy();
-    }
-    
-    // Inner classes
-    private class BrowserWebViewClient extends android.webkit.WebViewClient {
-        private Activity activity;
-        
-        BrowserWebViewClient(Activity activity) {
-            this.activity = activity;
-        }
-        
-        @Override
-        public boolean shouldOverrideUrlLoading(WebView view, String url) {
-            // Let extensions handle URL if needed
-            if (extensionManager.shouldInterceptUrl(url)) {
-                return true;
-            }
-            view.loadUrl(url);
-            return true;
-        }
-        
-        @Override
-        public void onPageFinished(WebView view, String url) {
-            super.onPageFinished(view, url);
-            
-            // Inject extension scripts
-            if (BuildConfig.ENABLE_EXTENSIONS) {
-                extensionManager.injectScripts(view, url);
-            }
-            
-            // Auto-extract YouTube links
-            if (url.contains("youtube.com") || url.contains("youtu.be")) {
-                youtubeExtractor.extractFromWebView(view);
-            }
-        }
-    }
-    
-    private class BrowserChromeClient extends WebChromeClient {
-        private Activity activity;
-        
-        BrowserChromeClient(Activity activity) {
-            this.activity = activity;
-        }
-        
-        // Fullscreen support
-        @Override
-        public void onShowCustomView(View view, CustomViewCallback callback) {
-            if (customView != null) {
-                callback.onCustomViewHidden();
-                return;
-            }
-            customView = view;
-            customViewCallback = callback;
-            ((FrameLayout) activity.getWindow().getDecorView()).addView(view, 
-                new FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.MATCH_PARENT));
-        }
-        
-        @Override
-        public void onHideCustomView() {
-            ((FrameLayout) activity.getWindow().getDecorView()).removeView(customView);
-            customView = null;
-            customViewCallback.onCustomViewHidden();
-        }
-        
-        // Console logging (DevTools)
-        @Override
-        public boolean onConsoleMessage(ConsoleMessage consoleMessage) {
-            System.out.println(consoleMessage.message() + " -- From: " 
-                + consoleMessage.sourceId() + ":" + consoleMessage.lineNumber());
-            return true;
-        }
-        
-        // Geolocation
-        @Override
-        public void onGeolocationPermissionsShowPrompt(String origin, 
-                GeolocationPermissions.Callback callback) {
-            callback.invoke(origin, true, false);
-        }
-        
-        // Permissions (camera, mic, etc.)
-        @Override
-        public void onPermissionRequest(PermissionRequest request) {
-            request.grant(request.getResources());
-        }
-        
-        // File upload
-        @Override
-        public boolean onShowFileChooser(WebView webView, ValueCallback<String[]> filePathCallback, 
-                FileChooserParams fileChooserParams) {
-            // Handle file upload
-            return true;
-        }
-        
-        // Progress updates
-        @Override
-        public void onProgressChanged(WebView view, int newProgress) {
-            activity.setTitle("Loading... " + newProgress + "%");
-            if (newProgress == 100) {
-                activity.setTitle(view.getTitle());
-            }
-        }
-    }
-    
-    private class BrowserInterface {
-        @JavascriptInterface
-        public void extractYouTubeLinks() {
-            runOnUiThread(() -> {
-                youtubeExtractor.extractFromWebView(webView);
-            });
-        }
-        
-        @JavascriptInterface
-        public void installExtension(String extensionJson) {
-            runOnUiThread(() -> {
-                extensionManager.installFromJson(extensionJson);
-            });
-        }
-        
-        @JavascriptInterface
-        public void showNotification(String message) {
-            runOnUiThread(() -> {
-                Toast.makeText(MainActivity.this, message, Toast.LENGTH_SHORT).show();
-            });
-        }
     }
 }
